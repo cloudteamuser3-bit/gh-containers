@@ -1,55 +1,89 @@
 name: Deployment (Container) second run
+
 on:
   push:
     branches:
       - main
       - dev
+
 env:
+  # Shared across all jobs
   CACHE_KEY: node-deps
   MONGODB_DB_NAME: gha-demo
+  MONGODB_USERNAME: root
+  MONGODB_PASSWORD: example
+  MONGODB_PORT: 27017
+  MONGODB_HOST: mongodb
+  PORT: 8080
+
 jobs:
   test:
     environment: testing
     runs-on: ubuntu-latest
+
     container:
-      image: node:16
-    env:
-      MONGODB_CONNECTION_PROTOCOL: mongodb
-      MONGODB_CLUSTER_ADDRESS: mongodb
-      MONGODB_USERNAME: root
-      MONGODB_PASSWORD: example
-      PORT: 8080
+      image: node:20  # Updated Node version (LTS)
+    
     services:
       mongodb:
         image: mongo
         env:
-          MONGO_INITDB_ROOT_USERNAME: root
-          MONGO_INITDB_ROOT_PASSWORD: example
+          MONGO_INITDB_ROOT_USERNAME: ${{ env.MONGODB_USERNAME }}
+          MONGO_INITDB_ROOT_PASSWORD: ${{ env.MONGODB_PASSWORD }}
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --eval 'db.adminCommand(\"ping\")'" 
+          --health-interval 10s 
+          --health-timeout 5s 
+          --health-retries 5
+
+    env:
+      # Construct full MongoDB URI for the app
+      MONGODB_URI: mongodb://${{ env.MONGODB_USERNAME }}:${{ env.MONGODB_PASSWORD }}@${{ env.MONGODB_HOST }}:${{ env.MONGODB_PORT }}
+    
     steps:
-      - name: Get Code
-        uses: actions/checkout@v3
-      - name: Cache dependencies
+      - name: 🧰 Checkout code
+        uses: actions/checkout@v4
+
+      - name: ⚙️ Cache npm packages
         uses: actions/cache@v3
         with:
           path: ~/.npm
           key: ${{ env.CACHE_KEY }}-${{ hashFiles('**/package-lock.json') }}
-      - name: Install dependencies
+          restore-keys: |
+            ${{ env.CACHE_KEY }}-
+
+      - name: 📦 Install dependencies
         run: npm ci
-      - name: Run server
-        run: npm start & npx wait-on http://127.0.0.1:$PORT # requires MongoDB Atlas to accept requests from anywhere!
-      - name: Run tests
-        run: npm test
-      - name: Output information
+
+      - name: 🚀 Start server
         run: |
-          echo "MONGODB_USERNAME: $MONGODB_USERNAME"
+          echo "Starting Node.js server on port $PORT..."
+          npm start & 
+          npx wait-on http://127.0.0.1:$PORT
+
+      - name: 🧪 Run tests
+        run: npm test
+
+      - name: 🔍 Output environment info
+        run: |
+          echo "Database: $MONGODB_DB_NAME"
+          echo "MongoDB URI: $MONGODB_URI"
+          echo "Server running on port: $PORT"
+
   deploy:
     needs: test
     runs-on: ubuntu-latest
+
     steps:
-      - name: Output information
+      - name: 🚀 Deployment step
         env:
-          PORT: 3000
-        run: |        
+          PORT: 3000  # Example override for deployment
+        run: |
+          echo "Deploying application..."
           echo "MONGODB_DB_NAME: $MONGODB_DB_NAME"
           echo "MONGODB_USERNAME: $MONGODB_USERNAME"
-          echo "${{ env.PORT }}"
+          echo "PORT: $PORT"
+          # Example: Add deployment logic here (e.g., Docker push, SSH, etc.)
+          echo "✅ Deployment complete."
